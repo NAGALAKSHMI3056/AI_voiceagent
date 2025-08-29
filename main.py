@@ -1,5 +1,3 @@
-# main.py
-
 from fastapi import FastAPI, UploadFile, File, HTTPException, Path as ApiPath, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +14,7 @@ import assemblyai as aai
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
 # ---------- Load .env (optional defaults) ----------
 load_dotenv()
@@ -37,6 +35,7 @@ missing = [
         ("WEATHER_API_KEY",    ENV_WEATHER_KEY),
     ] if not val
 ]
+
 if missing:
     logger.warning(
         f"Environment defaults missing for: {missing}. "
@@ -44,8 +43,10 @@ if missing:
     )
 
 # ---------- App & Static Paths ----------
-UPLOADS_DIR = FSPath("uploads"); UPLOADS_DIR.mkdir(exist_ok=True)
-STATIC_DIR  = FSPath("static");  STATIC_DIR.mkdir(exist_ok=True)
+UPLOADS_DIR = FSPath("uploads")
+UPLOADS_DIR.mkdir(exist_ok=True)
+STATIC_DIR  = FSPath("static")
+STATIC_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -56,13 +57,16 @@ config_store: dict[str, dict] = {}
 
 @app.get("/api/config/{session_id}")
 async def get_config(session_id: str):
+    # Return empty strings instead of default API keys to avoid exposing them
+    # Only return keys if overrides exist for this session
     ov = config_store.get(session_id, {})
+    # Return keys only if explicitly set, else empty strings
     return {
-        "assembly_ai": ov.get("assembly_ai", ENV_ASSEMBLYAI_KEY),
-        "murf":        ov.get("murf",        ENV_MURF_KEY),
-        "gemini":      ov.get("gemini",      ENV_GEMINI_KEY),
-        "newsapi":     ov.get("newsapi",     ENV_NEWSAPI_KEY),
-        "weatherapi":  ov.get("weatherapi",  ENV_WEATHER_KEY),
+        "assembly_ai": ov.get("assembly_ai", ""),
+        "murf":        ov.get("murf", ""),
+        "gemini":      ov.get("gemini", ""),
+        "newsapi":     ov.get("newsapi", ""),
+        "weatherapi":  ov.get("weatherapi", ""),
     }
 
 @app.post("/api/config/{session_id}")
@@ -122,15 +126,15 @@ async def fetch_latest_news(country: str, limit: int=5):
             if data.get("status") == "ok":
                 return data.get("articles", [])
         except Exception:
-            logger.warning("NewsAPI failed; falling back to RSS")
-
+            logger.warning("NewsAPI failed for country %s; falling back to RSS", country)
     # RSS fallback
     feed = (
         f"https://news.google.com/rss?"
         f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
     )
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(feed); resp.raise_for_status()
+        resp = await client.get(feed)
+        resp.raise_for_status()
     root = ET.fromstring(resp.content)
     items = root.findall(".//item")[:limit]
     return [
@@ -149,7 +153,7 @@ async def get_weather(city: str, api_key: str) -> dict:
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, params={"key": api_key, "q": city, "aqi": "no"})
     if resp.status_code == 401:
-        logger.error(f"WeatherAPI.com 401 → {resp.text}")
+        logger.error("WeatherAPI.com 401 Unauthorized → %s", resp.text)
         raise HTTPException(503, detail="Weather service unavailable.")
     resp.raise_for_status()
     data = resp.json()["current"]
@@ -167,7 +171,6 @@ async def chat_with_history(
     file: UploadFile   = File(...),
     flow: str          = Query(None)
 ):
-    # Pull overrides + fallbacks
     ov             = config_store.get(session_id, {})
     assembly_key   = ov.get("assembly_ai",  ENV_ASSEMBLYAI_KEY)
     murf_key       = ov.get("murf",         ENV_MURF_KEY)
@@ -175,17 +178,13 @@ async def chat_with_history(
     newsapi_key    = ov.get("newsapi",      ENV_NEWSAPI_KEY)
     weatherapi_key = ov.get("weatherapi",   ENV_WEATHER_KEY)
 
-    # Require AssemblyAI
     if not assembly_key:
         raise HTTPException(400, detail="AssemblyAI API key not configured.")
 
-    # Transcribe via AssemblyAI
     aai.settings.api_key = assembly_key
     transcriber = aai.Transcriber()
 
-    with tempfile.NamedTemporaryFile(
-        dir=UPLOADS_DIR, suffix=".wav", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(dir=UPLOADS_DIR, suffix=".wav", delete=False) as tmp:
         shutil.copyfileobj(file.file, tmp)
         wav_path = tmp.name
 
@@ -195,7 +194,8 @@ async def chat_with_history(
         os.unlink(wav_path)
         raise HTTPException(500, detail=str(e))
     finally:
-        os.unlink(wav_path)
+        if os.path.exists(wav_path):
+            os.unlink(wav_path)
 
     if tx.error or not tx.text.strip():
         raise HTTPException(400, detail=tx.error or "Empty transcript")
@@ -203,7 +203,6 @@ async def chat_with_history(
     user_text = tx.text.strip()
     add_message(session_id, "user", user_text)
 
-    # — NEWS FLOW —
     if flow == "news":
         country = map_location_to_country(user_text)
         arts    = await fetch_latest_news(country)
@@ -213,7 +212,6 @@ async def chat_with_history(
         )
         llm_txt = f"Top headlines for {user_text}:\n" + display
         add_message(session_id, "model", llm_txt)
-
         audio_url = None
         if murf_key:
             try:
@@ -225,22 +223,19 @@ async def chat_with_history(
                                 f"{i+1}. {a['title']} from {a['source']}"
                                 for i,a in enumerate(arts)
                             ),
-                            "voice_id":    "en-IN-alia",
-                            "audio_format":"mp3"
+                            "voice_id": "en-IN-alia",
+                            "audio_format": "mp3"
                         },
                         headers={"api-key": murf_key}
                     )
                 audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception:
                 logger.warning("Murf TTS failed for news")
-
         return {"user_text": user_text, "llm_text": llm_txt, "audio_url": audio_url}
 
-    # — WEATHER FLOW —
     if "weather" in user_text.lower():
         match = re.search(r"weather in ([\w\s]+)", user_text.lower())
         city  = (match.group(1).strip() if match else DEFAULT_CITY).title()
-
         weather = await get_weather(city, weatherapi_key)
         display = (
             f"Weather in {city}: {weather['desc']}, {weather['temp']}°C. "
@@ -248,7 +243,6 @@ async def chat_with_history(
             f"Wind: {weather['wind_speed']:.1f} m/s."
         )
         add_message(session_id, "model", display)
-
         audio_url = None
         if murf_key:
             try:
@@ -261,17 +255,14 @@ async def chat_with_history(
                 audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception:
                 logger.warning("Murf TTS failed for weather")
-
         return {"user_text": user_text, "llm_text": display, "audio_url": audio_url}
 
-    # — MATH-TEACHER FLOW —
     if not gemini_key:
         raise HTTPException(400, detail="Gemini API key not configured.")
 
-    gemini_url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent"
-    )
+    gemini_url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+                  f"{GEMINI_MODEL}:generateContent")
+
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(
             gemini_url,
@@ -288,7 +279,6 @@ async def chat_with_history(
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
     reply = parts[0].get("text", "").strip() if parts else ""
     add_message(session_id, "model", reply)
-
     audio_url = None
     if murf_key:
         try:
