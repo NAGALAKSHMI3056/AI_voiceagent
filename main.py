@@ -77,9 +77,9 @@ async def set_config(session_id: str, payload: dict):
             existing[k] = v.strip()
     return {"status": "ok", "overrides": existing}
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse("static/index.html")
 
 # ---------- Chat History Helpers ----------
 chat_history_store: dict[str, list[dict]] = {}
