@@ -126,7 +126,6 @@
       padding-top:6px;
       text-align:center;
     }
-
     /* --- Modal styles --- */
     .modal {
       display:none;
@@ -169,7 +168,6 @@
       gap:8px;
       margin-top:12px;
     }
-
     @media (max-width:480px){
       .modal-content {
         width:95%;
@@ -192,33 +190,27 @@
       <button id="news-btn" class="control-btn">Get Latest News</button>
     </div>
   </div>
-
   <!-- Config Modal -->
-  <div id="config-modal" class="modal">
+  <div id="config-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="modal-content">
       <h2>API Keys Configuration</h2>
       <label for="key-assemblyai">AssemblyAI Key</label>
-      <input id="key-assemblyai" type="text" placeholder="Enter AssemblyAI API key" />
-
+      <input id="key-assemblyai" type="text" placeholder="Enter AssemblyAI API key" autocomplete="off" />
       <label for="key-murf">Murf Key</label>
-      <input id="key-murf" type="text" placeholder="Enter Murf API key" />
-
+      <input id="key-murf" type="text" placeholder="Enter Murf API key" autocomplete="off" />
       <label for="key-gemini">Gemini Key</label>
-      <input id="key-gemini" type="text" placeholder="Enter Gemini API key" />
-
+      <input id="key-gemini" type="text" placeholder="Enter Gemini API key" autocomplete="off" />
       <label for="key-newsapi">NewsAPI Key</label>
-      <input id="key-newsapi" type="text" placeholder="Enter NewsAPI API key" />
-
+      <input id="key-newsapi" type="text" placeholder="Enter NewsAPI API key" autocomplete="off" />
       <label for="key-weatherapi">WeatherAPI.com Key</label>
-      <input id="key-weatherapi" type="text" placeholder="Enter WeatherAPI.com key" />
-
+      <input id="key-weatherapi" type="text" placeholder="Enter WeatherAPI.com key" autocomplete="off" />
       <div class="modal-actions">
-        <button id="save-config-btn" class="control-btn">Save</button>
-        <button id="close-config-btn" class="control-btn stop">Cancel</button>
+        <button id="clear-config-btn" class="control-btn stop" type="button">Clear Keys</button>
+        <button id="save-config-btn" class="control-btn" disabled>Save</button>
+        <button id="close-config-btn" class="control-btn stop" type="button">Cancel</button>
       </div>
     </div>
   </div>
-
   <script>
     const startBtn        = document.getElementById("start-btn");
     const stopBtn         = document.getElementById("stop-btn");
@@ -229,6 +221,7 @@
     const configModal     = document.getElementById("config-modal");
     const saveConfigBtn   = document.getElementById("save-config-btn");
     const closeConfigBtn  = document.getElementById("close-config-btn");
+    const clearConfigBtn  = document.getElementById("clear-config-btn");
     const configInputs    = Array.from(configModal.querySelectorAll("input"));
     let mediaRecorder, audioChunks = [], recording = false;
     let isNewsMode = false;
@@ -261,35 +254,26 @@
     // Modal controls
     function openSettings() {
       configModal.style.display = "flex";
-      loadConfig().then(validateInputs);
+      configModal.setAttribute("aria-hidden", "false");
+      clearInputs(); // Always clear inputs to start fresh
+      validateInputs();
     }
+
     function closeSettings() {
       configModal.style.display = "none";
+      configModal.setAttribute("aria-hidden", "true");
     }
-    settingsBtn.onclick     = openSettings;
-    closeConfigBtn.onclick  = closeSettings;
 
-    // Load existing config
-    async function loadConfig() {
-      const local = JSON.parse(localStorage.getItem("api_overrides") || "{}");
-      if (Object.keys(local).length) {
-        document.getElementById("key-assemblyai").value = local.assembly_ai || "";
-        document.getElementById("key-murf").value        = local.murf || "";
-        document.getElementById("key-gemini").value      = local.gemini || "";
-        document.getElementById("key-newsapi").value     = local.newsapi || "";
-        document.getElementById("key-weatherapi").value  = local.weatherapi || "";
-      } else {
-        const resp = await fetch(`/api/config/${sessionId}`);
-        if (resp.ok) {
-          const data = await resp.json();
-          document.getElementById("key-assemblyai").value = data.assembly_ai || "";
-          document.getElementById("key-murf").value        = data.murf || "";
-          document.getElementById("key-gemini").value      = data.gemini || "";
-          document.getElementById("key-newsapi").value     = data.newsapi || "";
-          document.getElementById("key-weatherapi").value  = data.weatherapi || "";
-        }
-      }
+    function clearInputs() {
+      configInputs.forEach(input => input.value = "");
+      saveConfigBtn.disabled = true;
+      // Also clear saved keys in localStorage so they don't reload on next open
+      localStorage.removeItem("api_overrides");
     }
+
+    settingsBtn.onclick = openSettings;
+    closeConfigBtn.onclick = closeSettings;
+    clearConfigBtn.onclick = clearInputs;
 
     // Enable save only if any field is non-empty
     function validateInputs() {
@@ -298,7 +282,7 @@
     }
     configInputs.forEach(i => i.addEventListener("input", validateInputs));
 
-    // Save config
+    // Save config overrides and store in localStorage
     saveConfigBtn.onclick = async () => {
       const payload = {
         assembly_ai: document.getElementById("key-assemblyai").value.trim(),
@@ -307,18 +291,23 @@
         newsapi:     document.getElementById("key-newsapi").value.trim(),
         weatherapi:  document.getElementById("key-weatherapi").value.trim(),
       };
-      await fetch(`/api/config/${sessionId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      localStorage.setItem("api_overrides", JSON.stringify(payload));
-      closeSettings();
-      setStatus("API keys saved!");
-      setTimeout(() => setStatus(""), 2000);
+      try {
+        await fetch(/api/config/${sessionId}, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        localStorage.setItem("api_overrides", JSON.stringify(payload));
+        closeSettings();
+        setStatus("API keys saved!");
+        setTimeout(() => setStatus(""), 2000);
+      } catch (e) {
+        setStatus("Failed to save API keys.");
+        console.error("Save config error:", e);
+      }
     };
 
-    // Recording & chat logic
+    // Recording & chat logic (unchanged)
     startBtn.onclick = async () => {
       if (!navigator.mediaDevices) {
         setStatus("Microphone not supported.");
@@ -331,7 +320,6 @@
         setStatus(isNewsMode ? "Listening for location…" : "Listening...");
         startBtn.disabled = true;
         stopBtn.disabled  = false;
-
         mediaRecorder.addEventListener("dataavailable", e => audioChunks.push(e.data));
         mediaRecorder.addEventListener("stop", async () => {
           setStatus("Transcribing...");
@@ -339,11 +327,11 @@
           const form = new FormData();
           form.append("file", blob, "input.wav");
           const url = isNewsMode
-            ? `/agent/chat/${sessionId}?flow=news`
-            : `/agent/chat/${sessionId}`;
+            ? /agent/chat/${sessionId}?flow=news
+            : /agent/chat/${sessionId};
           try {
             const resp = await fetch(url, { method: "POST", body: form });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            if (!resp.ok) throw new Error(HTTP ${resp.status});
             const data = await resp.json();
             addBubble(data.user_text, "user");
             addBubble(data.llm_text, "bot");
@@ -363,7 +351,6 @@
             isNewsMode       = false;
           }
         });
-
         mediaRecorder.start();
         recording = true;
       } catch (err) {
@@ -373,7 +360,6 @@
         isNewsMode       = false;
       }
     };
-
     stopBtn.onclick = () => {
       if (mediaRecorder && recording) {
         mediaRecorder.stop();
@@ -382,7 +368,6 @@
         stopBtn.disabled = true;
       }
     };
-
     newsBtn.onclick = () => {
       isNewsMode = true;
       startBtn.click();
