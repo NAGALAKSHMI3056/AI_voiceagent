@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>AI VOICE CHAT AGENT</title>
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon"/>
+  <style>
+    /* --- Base styles --- */
+    body {
+      background: #f6f6fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #main-card {
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 6px 24px rgba(90,64,180,0.1);
+      width: 650px;
+      min-height: 640px;
+      padding-bottom: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    #header-bar {
+      width: 100%;
+      padding: 21px 24px;
+      border-top-left-radius: 18px;
+      border-top-right-radius: 18px;
+      background: linear-gradient(90deg,#8937fd 0%,#fc42a2 100%);
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.2em;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    #chat-history {
+      width: 91%;
+      max-width: 800px;
+      min-height: 420px;
+      max-height: 390px;
+      margin-bottom: 16px;
+      overflow-y: auto;
+      padding: 16px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      background: #f8fafd;
+      border-radius: 13px;
+      box-shadow: 0 1px 6px rgba(90,64,180,0.04);
+    }
+    .bubble {
+      padding: 16px 22px;
+      max-width: 98%;
+      border-radius: 21px;
+      font-size: 16px;
+      line-height: 1.5;
+      word-break: break-word;
+      white-space: pre-wrap;
+      box-shadow: 0 1px 6px rgba(90,64,180,0.06);
+    }
+    .user {
+      background: linear-gradient(90deg,#e6ffe7 0%,#c1fcd5 100%);
+      color: #217030;
+      margin-left:auto;
+      border-radius:21px 21px 2px 21px;
+      text-align:right;
+    }
+    .bot {
+      background: linear-gradient(90deg,#fce8ea 0%,#f7d0e6 100%);
+      color: #a72854;
+      margin-right:auto;
+      border-radius:21px 21px 21px 2px;
+      text-align:left;
+    }
+    .audio-bubble {
+      background: #ede2fc;
+      align-self: flex-start;
+      padding:8px 14px;
+      border-radius:16px;
+      margin-top:5px;
+      width:230px;
+    }
+    .audio-bubble audio {
+      width:100%;
+      border-radius:8px;
+    }
+    .control-row {
+      display:flex;
+      gap:18px;
+      margin-top:23px;
+    }
+    .control-btn {
+      padding:11px 31px;
+      border-radius:24px;
+      border:none;
+      background: linear-gradient(90deg,#8937fd 0%,#fc42a2 100%);
+      color:#fff;
+      font-size:1.03em;
+      font-weight:500;
+      cursor:pointer;
+      box-shadow:0 2px 6px rgba(90,64,180,0.08);
+      transition: background 0.18s;
+    }
+    .control-btn.stop {
+      background: #eee;
+      color:#393850;
+    }
+    .control-btn:disabled {
+      filter:brightness(0.8);
+      cursor:not-allowed;
+    }
+    .system-msg {
+      margin:7px auto;
+      color:#7e6dd5;
+      font-weight:500;
+      font-size:0.97em;
+      padding-top:6px;
+      text-align:center;
+    }
+
+    /* --- Modal styles --- */
+    .modal {
+      display:none;
+      position:fixed;
+      z-index:1000;
+      left:0; top:0;
+      width:100%; height:100%;
+      background: rgba(0,0,0,0.4);
+      align-items:center; justify-content:center;
+    }
+    .modal-content {
+      background:#fff;
+      border-radius:8px;
+      padding:20px;
+      width:90%; max-width:400px;
+      display:flex; flex-direction:column; gap:12px;
+      max-height:90vh; overflow-y:auto;
+      box-shadow:0 4px 12px rgba(0,0,0,0.2);
+    }
+    .modal-content h2 {
+      margin:0;
+      font-size:1.2em;
+      text-align:center;
+      color:#8937fd;
+    }
+    .modal-content label {
+      font-size:0.95em;
+      color:#333;
+    }
+    .modal-content input {
+      padding:8px 10px;
+      border:1px solid #ccc;
+      border-radius:4px;
+      font-size:0.95em;
+      width:100%;
+    }
+    .modal-actions {
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:12px;
+    }
+
+    @media (max-width:480px){
+      .modal-content {
+        width:95%;
+        padding:16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="main-card">
+    <div id="header-bar">
+      <span>🎤 AI Math Teacher</span>
+      <button id="settings-btn" class="control-btn">⚙ Settings</button>
+    </div>
+    <div id="chat-history"></div>
+    <div class="system-msg" id="status-msg"></div>
+    <div class="control-row">
+      <button id="start-btn" class="control-btn">Start Microphone</button>
+      <button id="stop-btn" class="control-btn stop" disabled>Stop Microphone</button>
+      <button id="news-btn" class="control-btn">Get Latest News</button>
+    </div>
+  </div>
+
+  <!-- Config Modal -->
+  <div id="config-modal" class="modal">
+    <div class="modal-content">
+      <h2>API Keys Configuration</h2>
+      <label for="key-assemblyai">AssemblyAI Key</label>
+      <input id="key-assemblyai" type="text" placeholder="Enter AssemblyAI API key" />
+
+      <label for="key-murf">Murf Key</label>
+      <input id="key-murf" type="text" placeholder="Enter Murf API key" />
+
+      <label for="key-gemini">Gemini Key</label>
+      <input id="key-gemini" type="text" placeholder="Enter Gemini API key" />
+
+      <label for="key-newsapi">NewsAPI Key</label>
+      <input id="key-newsapi" type="text" placeholder="Enter NewsAPI API key" />
+
+      <label for="key-weatherapi">WeatherAPI.com Key</label>
+      <input id="key-weatherapi" type="text" placeholder="Enter WeatherAPI.com key" />
+
+      <div class="modal-actions">
+        <button id="save-config-btn" class="control-btn">Save</button>
+        <button id="close-config-btn" class="control-btn stop">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const startBtn        = document.getElementById("start-btn");
+    const stopBtn         = document.getElementById("stop-btn");
+    const newsBtn         = document.getElementById("news-btn");
+    const chatHistory     = document.getElementById("chat-history");
+    const statusMsg       = document.getElementById("status-msg");
+    const settingsBtn     = document.getElementById("settings-btn");
+    const configModal     = document.getElementById("config-modal");
+    const saveConfigBtn   = document.getElementById("save-config-btn");
+    const closeConfigBtn  = document.getElementById("close-config-btn");
+    const configInputs    = Array.from(configModal.querySelectorAll("input"));
+    let mediaRecorder, audioChunks = [], recording = false;
+    let isNewsMode = false;
+    const sessionId = Date.now().toString();
+
+    function addBubble(text, sender = "bot") {
+      const div = document.createElement("div");
+      div.className = "bubble " + sender;
+      div.textContent = text;
+      chatHistory.appendChild(div);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function addAudioBubble(url) {
+      const div = document.createElement("div");
+      div.className = "audio-bubble";
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = url;
+      div.appendChild(audio);
+      chatHistory.appendChild(div);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+      audio.play();
+    }
+
+    function setStatus(msg) {
+      statusMsg.textContent = msg;
+    }
+
+    // Modal controls
+    function openSettings() {
+      configModal.style.display = "flex";
+      loadConfig().then(validateInputs);
+    }
+    function closeSettings() {
+      configModal.style.display = "none";
+    }
+    settingsBtn.onclick     = openSettings;
+    closeConfigBtn.onclick  = closeSettings;
+
+    // Load existing config
+    async function loadConfig() {
+      const local = JSON.parse(localStorage.getItem("api_overrides") || "{}");
+      if (Object.keys(local).length) {
+        document.getElementById("key-assemblyai").value = local.assembly_ai || "";
+        document.getElementById("key-murf").value        = local.murf || "";
+        document.getElementById("key-gemini").value      = local.gemini || "";
+        document.getElementById("key-newsapi").value     = local.newsapi || "";
+        document.getElementById("key-weatherapi").value  = local.weatherapi || "";
+      } else {
+        const resp = await fetch(`/api/config/${sessionId}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          document.getElementById("key-assemblyai").value = data.assembly_ai || "";
+          document.getElementById("key-murf").value        = data.murf || "";
+          document.getElementById("key-gemini").value      = data.gemini || "";
+          document.getElementById("key-newsapi").value     = data.newsapi || "";
+          document.getElementById("key-weatherapi").value  = data.weatherapi || "";
+        }
+      }
+    }
+
+    // Enable save only if any field is non-empty
+    function validateInputs() {
+      const any = configInputs.some(i => i.value.trim() !== "");
+      saveConfigBtn.disabled = !any;
+    }
+    configInputs.forEach(i => i.addEventListener("input", validateInputs));
+
+    // Save config
+    saveConfigBtn.onclick = async () => {
+      const payload = {
+        assembly_ai: document.getElementById("key-assemblyai").value.trim(),
+        murf:        document.getElementById("key-murf").value.trim(),
+        gemini:      document.getElementById("key-gemini").value.trim(),
+        newsapi:     document.getElementById("key-newsapi").value.trim(),
+        weatherapi:  document.getElementById("key-weatherapi").value.trim(),
+      };
+      await fetch(`/api/config/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      localStorage.setItem("api_overrides", JSON.stringify(payload));
+      closeSettings();
+      setStatus("API keys saved!");
+      setTimeout(() => setStatus(""), 2000);
+    };
+
+    // Recording & chat logic
+    startBtn.onclick = async () => {
+      if (!navigator.mediaDevices) {
+        setStatus("Microphone not supported.");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        setStatus(isNewsMode ? "Listening for location…" : "Listening...");
+        startBtn.disabled = true;
+        stopBtn.disabled  = false;
+
+        mediaRecorder.addEventListener("dataavailable", e => audioChunks.push(e.data));
+        mediaRecorder.addEventListener("stop", async () => {
+          setStatus("Transcribing...");
+          const blob = new Blob(audioChunks, { type: "audio/wav" });
+          const form = new FormData();
+          form.append("file", blob, "input.wav");
+          const url = isNewsMode
+            ? `/agent/chat/${sessionId}?flow=news`
+            : `/agent/chat/${sessionId}`;
+          try {
+            const resp = await fetch(url, { method: "POST", body: form });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            addBubble(data.user_text, "user");
+            addBubble(data.llm_text, "bot");
+            if (data.audio_url) {
+              addAudioBubble(data.audio_url);
+            } else if (window.speechSynthesis) {
+              const utt = new SpeechSynthesisUtterance(data.llm_text);
+              utt.lang = "en-IN";
+              window.speechSynthesis.speak(utt);
+            }
+            setStatus("");
+          } catch (err) {
+            setStatus("Error: " + err.message);
+          } finally {
+            startBtn.disabled = false;
+            stopBtn.disabled  = true;
+            isNewsMode       = false;
+          }
+        });
+
+        mediaRecorder.start();
+        recording = true;
+      } catch (err) {
+        setStatus("Microphone access denied!");
+        startBtn.disabled = false;
+        stopBtn.disabled  = true;
+        isNewsMode       = false;
+      }
+    };
+
+    stopBtn.onclick = () => {
+      if (mediaRecorder && recording) {
+        mediaRecorder.stop();
+        recording = false;
+        setStatus("Processing...");
+        stopBtn.disabled = true;
+      }
+    };
+
+    newsBtn.onclick = () => {
+      isNewsMode = true;
+      startBtn.click();
+    };
+  </script>
+</body>
+</html>
