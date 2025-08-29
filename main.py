@@ -14,7 +14,7 @@ import assemblyai as aai
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 # ---------- Load .env (optional defaults) ----------
 load_dotenv()
