@@ -292,7 +292,7 @@
         weatherapi:  document.getElementById("key-weatherapi").value.trim(),
       };
       try {
-        await fetch(/api/config/${sessionId}, {
+        await fetch(`/api/config/${sessionId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -327,11 +327,11 @@
           const form = new FormData();
           form.append("file", blob, "input.wav");
           const url = isNewsMode
-            ? /agent/chat/${sessionId}?flow=news
-            : /agent/chat/${sessionId};
+            ? `/agent/chat/${sessionId}?flow=news`
+            :` /agent/chat/${sessionId}`;
           try {
             const resp = await fetch(url, { method: "POST", body: form });
-            if (!resp.ok) throw new Error(HTTP ${resp.status});
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             addBubble(data.user_text, "user");
             addBubble(data.llm_text, "bot");
