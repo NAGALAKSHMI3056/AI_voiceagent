@@ -107,10 +107,11 @@ Contributions and feedback are welcome. Please open an issue or pull request to 
 
 ---
 
-##Live Demo
 
-Experience the AI Math Teacher voice agent in action:
-`https://ai-voiceagent.onrender.com`
+## Live Demo
+
+Experience the AI Math Teacher voice agent in action:  
+https://ai-voiceagent.onrender.com
 Just open the link in your browser to start interacting.
 
 ---
