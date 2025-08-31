@@ -161,25 +161,27 @@ def map_location_to_country(loc: str) -> str:
 
 async def fetch_latest_news(api_key: str, country: str, limit: int = 5) -> list[dict]:
     """
-    Uses the exact api_key passed in (override or ENV), logs it, then falls back cleanly.
+    Uses the exact API key passed in (override or ENV), logs it,
+    hits NewsAPI.org top-headlines, then falls back to Google RSS.
     """
     api_key = (api_key or "").strip()
-    logger.info(f"[News Flow] using NewsAPI key: {api_key[:4]}…{api_key[-4:]} for '{country}'")
+    logger.info(f"[NewsAPI] key: {api_key[:4]}…{api_key[-4:]} for country='{country}'")
 
     if api_key:
         try:
+            url = "https://newsapi.org/v2/top-headlines"
             params = {"apiKey": api_key, "country": country, "pageSize": limit}
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get("https://newsapi.org/v2/top-headlines", params=params)
-            logger.info(f"[News Flow] HTTP {resp.status_code} → {resp.text[:200]}")
+                resp = await client.get(url, params=params)
+            logger.info(f"[NewsAPI] HTTP {resp.status_code} → {resp.text[:200]}")
             data = resp.json()
             if data.get("status") == "ok":
                 return data["articles"]
-            logger.warning(f"[News Flow] NewsAPI error: {data.get('message')}")
+            logger.warning(f"[NewsAPI] error: {data.get('message')}")
         except Exception as e:
-            logger.warning(f"[News Flow] exception: {e}; falling back to RSS")
+            logger.warning(f"[NewsAPI] exception: {e}; falling back to RSS")
 
-    # RSS fallback unchanged…
+    # RSS fallback
     feed_url = (
         f"https://news.google.com/rss?"
         f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
