@@ -159,16 +159,12 @@ def map_location_to_country(loc: str) -> str:
     }
     return mapping.get(sanitize_location(loc), "in")
 
-
-async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
+async def fetch_latest_news(api_key: str, country: str, limit: int = 5) -> list[dict]:
     """
-    Tries NewsAPI first, with detailed logging; falls back to Google News RSS.
+    Uses the exact api_key passed in (override or ENV), logs it, then falls back cleanly.
     """
-    # pick session override
-    sess_key = next((cfg["newsapi"] for cfg in config_store.values() if "newsapi" in cfg), None)
-    api_key = sess_key or ENV_NEWSAPI_KEY
-
-    logger.info(f"[News Flow] Using key: {api_key[:4]}…{api_key[-4:]} for '{country}'")
+    api_key = (api_key or "").strip()
+    logger.info(f"[News Flow] using NewsAPI key: {api_key[:4]}…{api_key[-4:]} for '{country}'")
 
     if api_key:
         try:
@@ -178,12 +174,12 @@ async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
             logger.info(f"[News Flow] HTTP {resp.status_code} → {resp.text[:200]}")
             data = resp.json()
             if data.get("status") == "ok":
-                return data.get("articles", [])
+                return data["articles"]
             logger.warning(f"[News Flow] NewsAPI error: {data.get('message')}")
         except Exception as e:
-            logger.warning(f"[News Flow] Exception: {e}; falling back to RSS")
+            logger.warning(f"[News Flow] exception: {e}; falling back to RSS")
 
-    # RSS fallback
+    # RSS fallback unchanged…
     feed_url = (
         f"https://news.google.com/rss?"
         f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
@@ -266,7 +262,7 @@ async def chat_with_history(
     # ----- News Flow -----
     if flow == "news":
         country = map_location_to_country(user_text)
-        articles = await fetch_latest_news(country)
+        articles = await fetch_latest_news(newsapi_key, country)
 
         if not articles:
             llm_txt = f"No news available for {user_text}."
