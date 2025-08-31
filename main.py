@@ -158,31 +158,30 @@ def map_location_to_country(loc: str) -> str:
     }
     return mapping.get(sanitize_location(loc), "in")
 
-
 async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
-    """
-    Attempt NewsAPI first; on failure or non-OK status, fall back to Google RSS.
-    """
-    # Session override takes precedence
-    sess_key = config_store.get(country, {}).get("newsapi")
+    # Pick override or env key
+    sess_key = None
+    for cfg in config_store.values():
+        if "newsapi" in cfg:
+            sess_key = cfg["newsapi"]
+            break
     api_key = sess_key or ENV_NEWSAPI_KEY
+
+    logger.info(f"[News Flow] using API key: {api_key[:4]}…{api_key[-4:]} for country '{country}'")
 
     if api_key:
         try:
             params = {"apiKey": api_key, "country": country, "pageSize": limit}
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    "https://newsapi.org/v2/top-headlines", params=params
-                )
-            if resp.status_code != 200:
-                logger.error(f"NewsAPI [{resp.status_code}] → {resp.text}")
+                resp = await client.get("https://newsapi.org/v2/top-headlines", params=params)
+            logger.info(f"[News Flow] HTTP {resp.status_code} → {resp.text[:200]}")
             data = resp.json()
             if data.get("status") == "ok":
                 return data.get("articles", [])
-            logger.warning(f"NewsAPI returned status {data.get('status')}: {data.get('message')}")
+            logger.warning(f"[News Flow] NewsAPI error: {data.get('message')}")
         except Exception as e:
-            logger.warning(f"NewsAPI failed for {country}: {e} — falling back to RSS")
-
+            logger.warning(f"[News Flow] exception: {e}; falling back to RSS")
+    # … RSS fallback unchanged …
     # RSS fallback
     feed_url = (
         f"https://news.google.com/rss?"
