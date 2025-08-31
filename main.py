@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(_name_)  # fixed logger name
+logger = logging.getLogger(__name__)  # fixed logger name
 
 # ---------- Load .env (optional defaults) ----------
 load_dotenv()
