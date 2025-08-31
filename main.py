@@ -183,7 +183,7 @@ async def fetch_latest_news(api_key: str, country: str, limit: int = 5) -> list[
 
     # RSS fallback
     feed_url = (
-        f"https://news.google.com/rss?"
+        f"https://newsapi.org/v2/top-headlines"
         f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
     )
     async with httpx.AsyncClient(timeout=10) as client:
