@@ -68,18 +68,19 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.on_event("startup")
 async def log_config_keys():
     """
-    Log the first and last few characters of each key on startup.
-    Helps confirm the service sees the correct values.
+    Log the first and last few characters of each key on startup
+    to verify Render is picking them up correctly.
     """
     def short(k: str) -> str:
         return f"{k[:4]}…{k[-4:]}" if len(k) > 8 else k or "(empty)"
-    logger.info("Loaded keys – "
-                f"AssemblyAI: {short(ENV_ASSEMBLYAI_KEY)}, "
-                f"Murf: {short(ENV_MURF_KEY)}, "
-                f"Gemini: {short(ENV_GEMINI_KEY)}, "
-                f"NewsAPI: {short(ENV_NEWSAPI_KEY)}, "
-                f"WeatherAPI: {short(ENV_WEATHER_KEY)}"
-                )
+    logger.info(
+        "Loaded keys – "
+        f"AssemblyAI: {short(ENV_ASSEMBLYAI_KEY)}, "
+        f"Murf: {short(ENV_MURF_KEY)}, "
+        f"Gemini: {short(ENV_GEMINI_KEY)}, "
+        f"NewsAPI: {short(ENV_NEWSAPI_KEY)}, "
+        f"WeatherAPI: {short(ENV_WEATHER_KEY)}"
+    )
 
 
 # ---------- In-Memory Config Store ----------
@@ -158,16 +159,16 @@ def map_location_to_country(loc: str) -> str:
     }
     return mapping.get(sanitize_location(loc), "in")
 
+
 async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
-    # Pick override or env key
-    sess_key = None
-    for cfg in config_store.values():
-        if "newsapi" in cfg:
-            sess_key = cfg["newsapi"]
-            break
+    """
+    Tries NewsAPI first, with detailed logging; falls back to Google News RSS.
+    """
+    # pick session override
+    sess_key = next((cfg["newsapi"] for cfg in config_store.values() if "newsapi" in cfg), None)
     api_key = sess_key or ENV_NEWSAPI_KEY
 
-    logger.info(f"[News Flow] using API key: {api_key[:4]}…{api_key[-4:]} for country '{country}'")
+    logger.info(f"[News Flow] Using key: {api_key[:4]}…{api_key[-4:]} for '{country}'")
 
     if api_key:
         try:
@@ -180,8 +181,8 @@ async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
                 return data.get("articles", [])
             logger.warning(f"[News Flow] NewsAPI error: {data.get('message')}")
         except Exception as e:
-            logger.warning(f"[News Flow] exception: {e}; falling back to RSS")
-    # … RSS fallback unchanged …
+            logger.warning(f"[News Flow] Exception: {e}; falling back to RSS")
+
     # RSS fallback
     feed_url = (
         f"https://news.google.com/rss?"
@@ -194,8 +195,8 @@ async def fetch_latest_news(country: str, limit: int = 5) -> list[dict]:
     items = root.findall(".//item")[:limit]
     return [
         {
-            "title": it.findtext("title", "No title"),
-            "url":   it.findtext("link", "#"),
+            "title":  it.findtext("title", "No title"),
+            "url":    it.findtext("link", "#"),
             "source": (it.find("source") or ET.Element("")).text or ""
         }
         for it in items
@@ -229,8 +230,8 @@ async def chat_with_history(
     file: UploadFile   = File(...),
     flow: str          = Query(None)
 ):
-    # Load per-session or environment keys
-    ov             = config_store.get(session_id, {})
+    # load applicable keys
+    ov = config_store.get(session_id, {})
     assembly_key   = ov.get("assembly_ai",  ENV_ASSEMBLYAI_KEY)
     murf_key       = ov.get("murf",         ENV_MURF_KEY)
     gemini_key     = ov.get("gemini",       ENV_GEMINI_KEY)
@@ -240,13 +241,10 @@ async def chat_with_history(
     if not assembly_key:
         raise HTTPException(400, detail="AssemblyAI API key not configured.")
 
-    # Transcribe with AssemblyAI
+    # transcribe via AssemblyAI
     aai.settings.api_key = assembly_key
     transcriber = aai.Transcriber()
-
-    with tempfile.NamedTemporaryFile(
-        dir=UPLOADS_DIR, suffix=".wav", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(dir=UPLOADS_DIR, suffix=".wav", delete=False) as tmp:
         shutil.copyfileobj(file.file, tmp)
         wav_path = tmp.name
 
@@ -280,8 +278,8 @@ async def chat_with_history(
             llm_txt = f"Top headlines for {user_text}:\n{display}"
 
         add_message(session_id, "model", llm_txt)
-
         audio_url = None
+
         if murf_key and articles:
             try:
                 tts_text = " ".join(
@@ -302,7 +300,6 @@ async def chat_with_history(
                     audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception as e:
                 logger.warning(f"Murf TTS failed for news: {e}")
-
         return {"user_text": user_text, "llm_text": llm_txt, "audio_url": audio_url}
 
     # ----- Weather Flow -----
@@ -313,7 +310,7 @@ async def chat_with_history(
         try:
             weather = await get_weather(city, weatherapi_key)
             display = (
-                f"Weather in {city}: {weather['desc']}, {weather['temp']}°C. "
+                f"Weather in {city}: {weather['desc']}, {weather['temp']}°C. " +
                 f"Humidity: {weather['humidity']}%. Wind: {weather['wind_speed']:.1f} m/s."
             )
         except HTTPException as he:
@@ -322,8 +319,8 @@ async def chat_with_history(
             display = f"Weather data for {city} is unavailable."
 
         add_message(session_id, "model", display)
-
         audio_url = None
+
         if murf_key:
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
@@ -336,7 +333,6 @@ async def chat_with_history(
                     audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception as e:
                 logger.warning(f"Murf TTS failed for weather: {e}")
-
         return {"user_text": user_text, "llm_text": display, "audio_url": audio_url}
 
     # ----- General Queries via Gemini -----
@@ -360,7 +356,6 @@ async def chat_with_history(
         if resp.status_code != 200:
             logger.error(raw.decode(errors="ignore"))
             raise HTTPException(500, detail="Gemini API error")
-
         data = resp.json()
 
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
