@@ -4,13 +4,10 @@ import shutil
 import tempfile
 import logging
 import xml.etree.ElementTree as ET
-
 from pathlib import Path as FSPath
 from dotenv import load_dotenv
-
 import httpx
 import assemblyai as aai
-
 from fastapi import (
     FastAPI,
     UploadFile,
@@ -24,11 +21,10 @@ from fastapi.staticfiles import StaticFiles
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)  # fixed logger name
 
 # ---------- Load .env (optional defaults) ----------
 load_dotenv()
-
 ENV_ASSEMBLYAI_KEY = os.getenv("ASSEMBLYAI_API_KEY", "").strip()
 ENV_MURF_KEY       = os.getenv("MURF_API_KEY",       "").strip()
 ENV_GEMINI_KEY     = os.getenv("GEMINI_API_KEY",     "").strip()
@@ -46,6 +42,7 @@ missing = [
         ("WEATHER_API_KEY",    ENV_WEATHER_KEY),
     ] if not val
 ]
+
 if missing:
     logger.warning(
         f"Environment defaults missing for: {missing}. "
@@ -64,12 +61,11 @@ STATIC_DIR.mkdir(exist_ok=True)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-
 @app.on_event("startup")
 async def log_config_keys():
     """
     Log the first and last few characters of each key on startup
-    to verify Render is picking them up correctly.
+    to verify environment keys are loaded.
     """
     def short(k: str) -> str:
         return f"{k[:4]}…{k[-4:]}" if len(k) > 8 else k or "(empty)"
@@ -82,11 +78,9 @@ async def log_config_keys():
         f"WeatherAPI: {short(ENV_WEATHER_KEY)}"
     )
 
-
 # ---------- In-Memory Config Store ----------
 # session_id → { assembly_ai, murf, gemini, newsapi, weatherapi }
 config_store: dict[str, dict] = {}
-
 
 @app.get("/api/config/{session_id}")
 async def get_config(session_id: str):
@@ -98,7 +92,6 @@ async def get_config(session_id: str):
         "newsapi":     overrides.get("newsapi",     ENV_NEWSAPI_KEY),
         "weatherapi":  overrides.get("weatherapi",  ENV_WEATHER_KEY),
     }
-
 
 @app.post("/api/config/{session_id}")
 async def set_config(session_id: str, payload: dict):
@@ -112,7 +105,6 @@ async def set_config(session_id: str, payload: dict):
             session_cfg[key] = payload[key].strip()
     return {"status": "ok", "overrides": session_cfg}
 
-
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     """
@@ -120,18 +112,14 @@ async def root():
     """
     return FileResponse(STATIC_DIR / "index.html")
 
-
 # ---------- Chat History Helpers ----------
 chat_history_store: dict[str, list[dict]] = {}
-
 
 def get_chat_history(sid: str) -> list[dict]:
     return chat_history_store.get(sid, [])
 
-
 def add_message(sid: str, role: str, text: str):
     chat_history_store.setdefault(sid, []).append({"role": role, "text": text})
-
 
 def build_gemini_contents(sid: str) -> list[dict]:
     SYSTEM_PROMPT = (
@@ -144,12 +132,9 @@ def build_gemini_contents(sid: str) -> list[dict]:
         contents.append({"role": m["role"], "parts": [{"text": m["text"]}]})
     return contents
 
-
 # ---------- News & Weather Helpers ----------
-
 def sanitize_location(loc: str) -> str:
     return re.sub(r"[^\w\s]", "", loc).strip().lower()
-
 
 def map_location_to_country(loc: str) -> str:
     mapping = {
@@ -161,12 +146,11 @@ def map_location_to_country(loc: str) -> str:
 
 async def fetch_latest_news(api_key: str, country: str, limit: int = 5) -> list[dict]:
     """
-    Uses the exact API key passed in (override or ENV), logs it,
-    hits NewsAPI.org top-headlines, then falls back to Google RSS.
+    Attempts NewsAPI then falls back to Google News RSS if no articles returned.
     """
     api_key = (api_key or "").strip()
     logger.info(f"[NewsAPI] key: {api_key[:4]}…{api_key[-4:]} for country='{country}'")
-
+    articles = []
     if api_key:
         try:
             url = "https://newsapi.org/v2/top-headlines"
@@ -176,30 +160,31 @@ async def fetch_latest_news(api_key: str, country: str, limit: int = 5) -> list[
             logger.info(f"[NewsAPI] HTTP {resp.status_code} → {resp.text[:200]}")
             data = resp.json()
             if data.get("status") == "ok":
-                return data["articles"]
-            logger.warning(f"[NewsAPI] error: {data.get('message')}")
+                articles = data["articles"]
+            else:
+                logger.warning(f"[NewsAPI] error: {data.get('message')}")
         except Exception as e:
             logger.warning(f"[NewsAPI] exception: {e}; falling back to RSS")
-
-    # RSS fallback
-    feed_url = (
-        f"https://newsapi.org/v2/top-headlines"
-        f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
-    )
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(feed_url)
-        resp.raise_for_status()
-    root = ET.fromstring(resp.content)
-    items = root.findall(".//item")[:limit]
-    return [
-        {
-            "title":  it.findtext("title", "No title"),
-            "url":    it.findtext("link", "#"),
-            "source": (it.find("source") or ET.Element("")).text or ""
-        }
-        for it in items
-    ]
-
+    # Fallback if NewsAPI returned NO articles
+    if not articles:
+        feed_url = (
+            f"https://news.google.com/rss?"
+            f"hl=en-{country.upper()}&gl={country.upper()}&ceid={country.upper()}:en"
+        )
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(feed_url)
+            resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        items = root.findall(".//item")[:limit]
+        articles = [
+            {
+                "title": it.findtext("title", "No title"),
+                "url": it.findtext("link", "#"),
+                "source": (it.find("source") or ET.Element("")).text or ""
+            }
+            for it in items
+        ]
+    return articles
 
 async def get_weather(city: str, api_key: str) -> dict:
     if not api_key:
@@ -213,22 +198,20 @@ async def get_weather(city: str, api_key: str) -> dict:
     resp.raise_for_status()
     data = resp.json()["current"]
     return {
-        "temp":       data["temp_c"],
-        "desc":       data["condition"]["text"],
-        "humidity":   data["humidity"],
+        "temp": data["temp_c"],
+        "desc": data["condition"]["text"],
+        "humidity": data["humidity"],
         "wind_speed": data["wind_kph"] / 3.6,
     }
 
-
 # ---------- Unified Chat Endpoint ----------
-
 @app.post("/agent/chat/{session_id}")
 async def chat_with_history(
     session_id: str = ApiPath(...),
-    file: UploadFile   = File(...),
-    flow: str          = Query(None)
+    file: UploadFile = File(...),
+    flow: str = Query(None)
 ):
-    # load applicable keys
+    # Load keys (with session override or env fallback)
     ov = config_store.get(session_id, {})
     assembly_key   = ov.get("assembly_ai",  ENV_ASSEMBLYAI_KEY)
     murf_key       = ov.get("murf",         ENV_MURF_KEY)
@@ -239,7 +222,7 @@ async def chat_with_history(
     if not assembly_key:
         raise HTTPException(400, detail="AssemblyAI API key not configured.")
 
-    # transcribe via AssemblyAI
+    # Transcribe audio with AssemblyAI
     aai.settings.api_key = assembly_key
     transcriber = aai.Transcriber()
     with tempfile.NamedTemporaryFile(dir=UPLOADS_DIR, suffix=".wav", delete=False) as tmp:
@@ -250,6 +233,8 @@ async def chat_with_history(
         tx = transcriber.transcribe(wav_path)
     except Exception as e:
         logger.error(f"Transcription error: {e}")
+        if os.path.exists(wav_path):
+            os.unlink(wav_path)
         raise HTTPException(500, detail=str(e))
     finally:
         if os.path.exists(wav_path):
@@ -265,7 +250,6 @@ async def chat_with_history(
     if flow == "news":
         country = map_location_to_country(user_text)
         articles = await fetch_latest_news(newsapi_key, country)
-
         if not articles:
             llm_txt = f"No news available for {user_text}."
         else:
@@ -274,10 +258,9 @@ async def chat_with_history(
                 for i, a in enumerate(articles)
             )
             llm_txt = f"Top headlines for {user_text}:\n{display}"
-
         add_message(session_id, "model", llm_txt)
-        audio_url = None
 
+        audio_url = None
         if murf_key and articles:
             try:
                 tts_text = " ".join(
@@ -298,13 +281,13 @@ async def chat_with_history(
                     audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception as e:
                 logger.warning(f"Murf TTS failed for news: {e}")
+
         return {"user_text": user_text, "llm_text": llm_txt, "audio_url": audio_url}
 
     # ----- Weather Flow -----
     if "weather" in user_text.lower():
         match = re.search(r"weather in ([\w\s]+)", user_text.lower())
         city = (match.group(1).strip() if match else DEFAULT_CITY).title()
-
         try:
             weather = await get_weather(city, weatherapi_key)
             display = (
@@ -315,10 +298,9 @@ async def chat_with_history(
             display = he.detail
         except Exception:
             display = f"Weather data for {city} is unavailable."
-
         add_message(session_id, "model", display)
-        audio_url = None
 
+        audio_url = None
         if murf_key:
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
@@ -331,6 +313,7 @@ async def chat_with_history(
                     audio_url = resp.json().get("audioFile") or resp.json().get("audio_url")
             except Exception as e:
                 logger.warning(f"Murf TTS failed for weather: {e}")
+
         return {"user_text": user_text, "llm_text": display, "audio_url": audio_url}
 
     # ----- General Queries via Gemini -----
@@ -341,7 +324,6 @@ async def chat_with_history(
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent"
     )
-
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             gemini_url,
@@ -350,10 +332,10 @@ async def chat_with_history(
             params={"key": gemini_key}
         )
         raw = await resp.aread()
-
         if resp.status_code != 200:
             logger.error(raw.decode(errors="ignore"))
             raise HTTPException(500, detail="Gemini API error")
+
         data = resp.json()
 
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
